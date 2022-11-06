@@ -42,12 +42,6 @@ void setup() {
   // joystick speed indicator
   pinMode(SPEED_LED, OUTPUT);
 
-  // populate divs
-//  divs[0] = ZERO_VAL;
-//  for(int i = 1; i < DIVS; i++){
-//    divs[i] = (MAX_ANALOG_VAL/(DIVS-1))*i;
-//  }
-
   // Setup I2C
   Wire.begin();
 

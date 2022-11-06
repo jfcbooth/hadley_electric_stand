@@ -8,8 +8,8 @@ void dataRcv(int numBytes);
 const int altDirPin = 5;
 const int altStepPin = 2;
 
-const int AzDirPin = 6;
-const int AzStepPin = 3;
+const int azDirPin = 6;
+const int azStepPin = 3;
 
 #define MAX_SPEED 1000
 #define MAX_ACCEL 30
@@ -19,7 +19,7 @@ const int AzStepPin = 3;
 
 // Creates an instance
 AccelStepper AltStepper(motorInterfaceType, altStepPin, altDirPin);
-AccelStepper AzStepper(motorInterfaceType, AzStepPin, AzDirPin);
+AccelStepper AzStepper(motorInterfaceType, azStepPin, azDirPin);
 
 typedef struct {
   bool up = 0;
@@ -35,53 +35,67 @@ typedef struct {
 volatile static control_t controls;
 
 void setup() {
+// For debugging
+  Serial.begin(9600);
+
+  
   Wire.begin(0x08);           // join I2C bus as Slave with address 0x08
   // event handler initializations
   Wire.onReceive(dataRcv);    // register an event handler for received data
 
-  // enable stepper motor drivers
+  // enable pin
   pinMode(8, OUTPUT);
   digitalWrite(8, LOW);
 
-  //  pinMode(altDirPin, OUTPUT);
-  //  digitalWrite(altDirPin, HIGH);
-  //
-  //  pinMode(altStepPin, OUTPUT);
-  //  digitalWrite(altStepPin, HIGH);
-  Serial.begin(9600);
-  //Serial2.begin(9600, SERIAL_7O1);
+    pinMode(altDirPin, OUTPUT);
+    pinMode(altStepPin, OUTPUT);
+    //digitalWrite(altDirPin, HIGH);
+    //digitalWrite(altStepPin, HIGH);
+  
+    //pinMode(azDirPin, OUTPUT);
+    //pinMode(azStepPin, OUTPUT);
+    //digitalWrite(altDirPin, HIGH);
+    //digitalWrite(altStepPin, HIGH);
+    
 
   // set the maximum speed, acceleration factor,
   // initial speed and the target position
   AltStepper.setMaxSpeed(MAX_SPEED);
   AltStepper.setAcceleration(MAX_ACCEL);
+  AltStepper.setSpeed(200);
+  AltStepper.moveTo(10000);
 
-  AzStepper.setMaxSpeed(MAX_SPEED);
-  AzStepper.setAcceleration(MAX_ACCEL);
+  //AzStepper.setMaxSpeed(MAX_SPEED);
+  //AzStepper.setAcceleration(MAX_ACCEL);
+  //AzStepper.setSpeed(200);
+  //AzStepper.moveTo(1000000);
+
 }
 
 void loop() {
   //Serial.print("here2");
 
-  Serial.print("Up: ");
-  Serial.print(controls.up);
-  Serial.print(", Down: ");
-  Serial.print(controls.down);
-  Serial.print(", Left: ");
-  Serial.print(controls.left);
-  Serial.print(", Right: ");
-  Serial.print(controls.right);
-  Serial.print(", Y: ");
-  Serial.print(controls.y);
-  Serial.print(", X: ");
-  Serial.print(controls.x);
-  Serial.println();
+//  Serial.print("Up: ");
+//  Serial.print(controls.up);
+//  Serial.print(", Down: ");
+//  Serial.print(controls.down);
+//  Serial.print(", Left: ");
+//  Serial.print(controls.left);
+//  Serial.print(", Right: ");
+//  Serial.print(controls.right);
+//  Serial.print(", Y: ");
+//  Serial.print(controls.y);
+//  Serial.print(", X: ");
+//  Serial.print(controls.x);
+//  Serial.println();
   //  // Change direction once the motor reaches target position
-  //  if (myStepper.distanceToGo() == 0)
-  //    myStepper.moveTo(-myStepper.currentPosition());
-  //
-  //  // Move the motor one step
-  //  myStepper.run();
+    if (AltStepper.distanceToGo() == 0)
+      AltStepper.moveTo(-AltStepper.currentPosition());
+//    if (AzStepper.distanceToGo() == 0)
+//      AzStepper.moveTo(-AzStepper.currentPosition());  
+    // Move the motor one step
+  AltStepper.run();
+  //AzStepper.run();
 }
 
 //received data handler function
