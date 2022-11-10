@@ -1,4 +1,4 @@
-#include <AccelStepper.h>
+//#include <AccelStepper.h>
 #include <Wire.h>
 
 void dataRcv(int numBytes);
@@ -7,17 +7,12 @@ void dataRcv(int numBytes);
 
 
 // Define pin connections
-#define xDirPin 5
-#define xStepPin 2
-#define yDirPin 6
-#define yStepPin 3
+#define X_DIR_PIN 5
+#define X_STEP_PIN 2
+#define Y_DIR_PIN 6
+#define Y_STEP_PIN 3
 
 #define STEPPER_EN 8
-
-#define MAX_SPEED 200
-#define SLOW_SPEED MAX_SPEED/3
-#define ACCEL 100
-
 
 // joystick returns value 0-255
 // 255 <- X -> 0
@@ -28,18 +23,13 @@ void dataRcv(int numBytes);
 #define STICK_DEADZONE 25 // 25 from center is dead zone
 #define STICK_FASTZONE 50 // 50 from end is fast zone, the rest in the middle is slow zone
 
-// Define motor interface type
-#define motorInterfaceType 1
-
-// Creates an instance
-AccelStepper xStepper(motorInterfaceType, xStepPin, xDirPin);
-AccelStepper yStepper(motorInterfaceType, yStepPin, yDirPin);
-
+#define MIN_SPEED_DELAY 3000
+#define MAX_SPEED_DELAY 10000
 typedef struct {
   bool up = 0;
   bool down = 0;
-  bool left = 0;
-  bool right = 0;
+  bool cw = 0;
+  bool ccw = 0;
   bool en_led_toggle = 0;
   bool en_led = 0; // start with steppers disabled
   int16_t x = 0;
@@ -48,128 +38,146 @@ typedef struct {
 
 volatile static control_t controls;
 
-typedef struct {
-  int16_t x = 0;
-  int16_t y = 0;
-  int16_t xPos = 0;
-  int16_t yPos = 0;
-  int16_t xJoy = 0;
-  int16_t yJoy = 0;
-} move_t;
-
-volatile static move_t toMove; // holds movements that need to be performed
-
 void setup() {
   // Debug output
-#ifdef DEBUG
-  Serial.begin(9600);
-#endif
+  #ifdef DEBUG
+    Serial.begin(9600);
+  #endif
 
   Wire.begin(0x08); // join I2C bus as Slave with address 0x08
   Wire.onReceive(dataRcv); // register an event handler for received data
 
   // start with stepper motors disabled
   pinMode(STEPPER_EN, OUTPUT);
-  digitalWrite(STEPPER_EN, LOW);
+  digitalWrite(STEPPER_EN, HIGH);
 
+  // Setup X pins
+  pinMode(X_DIR_PIN, OUTPUT);
+  pinMode(X_STEP_PIN, OUTPUT);
 
-  // set the maximum speed, acceleration factor,
-  xStepper.setMaxSpeed(MAX_SPEED);
+  digitalWrite(X_STEP_PIN, LOW);
+  digitalWrite(X_DIR_PIN, LOW);
 
-  yStepper.setMaxSpeed(MAX_SPEED);
+  // Setup Y pins
+  pinMode(Y_DIR_PIN, OUTPUT);
+  pinMode(Y_STEP_PIN, OUTPUT);
   
-  xStepper.setSpeed(SLOW_SPEED);
+  digitalWrite(Y_STEP_PIN, LOW);
+  digitalWrite(Y_DIR_PIN, LOW);
+
+  
 }
 
 void loop() {
- 
-    // update needed movements
-    switch(controls.x){
-      case 1:
-        xStepper.setSpeed(SLOW_SPEED);
-        xStepper.move(1000000);
-        break;
-      case 2:
-        xStepper.setSpeed(MAX_SPEED);
-        xStepper.move(1000000);
-        break;
-      case -1:
-        xStepper.setSpeed(-SLOW_SPEED);
-        xStepper.move(1000000);
-        break;
-      case -2:
-        xStepper.setSpeed(-MAX_SPEED);
-        xStepper.move(1000000);
-        break;
-      case 0:
-        xStepper.move(xStepper.currentPosition());
-        break;
+  /*
+   * Motor enable
+   */
+
+   static bool en = false; // used to steppers aren't continually being enabled & disabled
+    if(controls.en_led && en == false){
+      digitalWrite(STEPPER_EN, LOW); // enable steppers
+      en = true;
+    } else if(!controls.en_led && en == true){
+      digitalWrite(STEPPER_EN, HIGH); // disable steppers
+      en = false;
     }
 
-    if(controls.left){
-      while(controls.left); // wait for it to be released
-      xStepper.setSpeed(SLOW_SPEED);
-      xStepper.move(xStepper.currentPosition()+1);
+   /*
+    *  X Movements
+    */
+
+  // Joystick X-axis movements
+  int xStepDelay = 3000;
+  if (!(controls.x > STICK_MID - STICK_DEADZONE && controls.x < STICK_MID + STICK_DEADZONE)){ // if not in deadzone
+    if(controls.x < STICK_MID - STICK_DEADZONE){ // positive
+      xStepDelay = map(controls.x, STICK_MID - STICK_DEADZONE, STICK_MIN, MAX_SPEED_DELAY, MIN_SPEED_DELAY); // Convrests the read values of the potentiometer from 0 to 255 into desireded delay values (300 to 4000)  // Makes pules with custom delay, depending on the Potentiometer, from which the speed of the motor depends
+      digitalWrite(X_DIR_PIN, LOW);
+    } else { // negative
+      xStepDelay = map(controls.x, STICK_MID + STICK_DEADZONE, STICK_MAX, MAX_SPEED_DELAY, MIN_SPEED_DELAY); // Convrests the read values of the potentiometer from 0 to 255 into desireded delay values (300 to 4000)  // Makes pules with custom delay, depending on the Potentiometer, from which the speed of the motor depends
+      digitalWrite(X_DIR_PIN, HIGH);
     }
-    if(controls.right){
-      while(controls.right); // wait for it to be released
-      xStepper.setSpeed(-SLOW_SPEED);
-      xStepper.move(xStepper.currentPosition()+1);
+    // take 1 step
+    //Serial.println(xStepDelay);
+    digitalWrite(X_STEP_PIN, HIGH);
+    delayMicroseconds(xStepDelay);
+    digitalWrite(X_STEP_PIN, LOW);
+    delayMicroseconds(xStepDelay);
+  }
+
+  // Left button movements
+  if(controls.cw){
+    while(controls.cw); // wait for it to be released
+    digitalWrite(X_DIR_PIN, HIGH);
+    digitalWrite(X_STEP_PIN, HIGH);
+    delayMicroseconds(MAX_SPEED_DELAY);
+    digitalWrite(X_STEP_PIN, LOW);
+    delayMicroseconds(MAX_SPEED_DELAY);
+  }
+
+  // Right button movements
+  if(controls.ccw){
+    while(controls.ccw); // wait for it to be released
+    digitalWrite(X_DIR_PIN, LOW);
+    digitalWrite(X_STEP_PIN, HIGH);
+    delayMicroseconds(MAX_SPEED_DELAY);
+    digitalWrite(X_STEP_PIN, LOW);
+    delayMicroseconds(MAX_SPEED_DELAY);
+  }
+
+  /*
+   * Y Movements
+   */
+
+  // Joystick Y-axis movements
+  int yStepDelay = 3000;
+  if (!(controls.y > STICK_MID - STICK_DEADZONE && controls.y < STICK_MID + STICK_DEADZONE)){ // if not in deadzone
+    if(controls.y < STICK_MID - STICK_DEADZONE){ // positive
+      yStepDelay = map(controls.y, STICK_MID - STICK_DEADZONE, STICK_MAX, MAX_SPEED_DELAY, MIN_SPEED_DELAY); // Convrests the read values of the potentiometer from 0 to 255 into desireded delay values (300 to 4000)  // Makes pules with custom delay, depending on the Potentiometer, from which the speed of the motor depends
+      digitalWrite(Y_DIR_PIN, LOW);
+    } else { // negative
+      yStepDelay = map(controls.y, STICK_MID + STICK_DEADZONE, STICK_MIN, MAX_SPEED_DELAY, MIN_SPEED_DELAY); // Convrests the read values of the potentiometer from 0 to 255 into desireded delay values (300 to 4000)  // Makes pules with custom delay, depending on the Potentiometer, from which the speed of the motor depends
+      digitalWrite(Y_DIR_PIN, HIGH);
     }
-    
-  //
-  //  // make moves
-  //  if(xStepper.distanceToGo() == 0 && toMove.x != toMove.xPos){ // if we're not moving
-  //      xStepper.move(toMove.x);
-  //  }
-  xStepper.run();
-  //  if(controls.left) toMove.alt--;
-  //  if(controls.right) toMove.alt++;
-  //  if(controls.up) toMove.az++;
-  //  if(controls.down) toMove.az--;
+    // take 1 step
+    digitalWrite(Y_STEP_PIN, HIGH);
+    delayMicroseconds(yStepDelay);
+    digitalWrite(Y_STEP_PIN, LOW);
+    delayMicroseconds(yStepDelay);
+  }
+
+  // Up button movements
+  if(controls.up){
+    while(controls.up); // wait for it to be released
+    digitalWrite(Y_DIR_PIN, LOW);
+    digitalWrite(Y_STEP_PIN, HIGH);
+    delayMicroseconds(MAX_SPEED_DELAY);
+    digitalWrite(Y_STEP_PIN, LOW);
+    delayMicroseconds(MAX_SPEED_DELAY);
+  }
+
+  // Down button movements
+  if(controls.down){
+    while(controls.down); // wait for it to be released
+    digitalWrite(Y_DIR_PIN, HIGH);
+    digitalWrite(Y_STEP_PIN, HIGH);
+    delayMicroseconds(MAX_SPEED_DELAY);
+    digitalWrite(Y_STEP_PIN, LOW);
+    delayMicroseconds(MAX_SPEED_DELAY);
+  }
+
 #ifdef DEBUG
-  Serial.print("toMove.x: ");
-  Serial.print(toMove.x);
-  Serial.print(", toMove.y: ");
-  Serial.print(toMove.y);
-  Serial.print(", En: ");
-  Serial.print(controls.en_led);
-  Serial.print(", Y: ");
-  Serial.print(controls.y);
-  Serial.print(", X: ");
-  Serial.print(controls.x);
-  Serial.println();
+//  Serial.print("toMove.x: ");
+//  Serial.print(toMove.x);
+//  Serial.print(", toMove.y: ");
+//  Serial.print(toMove.y);
+//  Serial.print(", En: ");
+//  Serial.print(controls.en_led);
+//  Serial.print(", Y: ");
+//  Serial.print(controls.y);
+//  Serial.print(", X: ");
+//  Serial.print(controls.x);
+//  Serial.println();
 #endif
-
-  //  // Change direction once the motor reaches target position
-  //    if (AltStepper.distanceToGo() == 0)
-  //      AltStepper.moveTo(-AltStepper.currentPosition());
-  //    if (AzStepper.distanceToGo() == 0)
-  //      AzStepper.moveTo(-AzStepper.currentPosition());
-  // Move the motor one step
-  //AltStepper.run();
-  //AzStepper.run();
-}
-
-void AccelStepper::setOutputPins(uint8_t mask)
-{
-    uint8_t numpins = 2;
-    for (uint8_t i = 0; i < numpins; i++)
-  digitalWrite(_pin[i], (mask & (1 << i)) ? (HIGH ^ _pinInverted[i]) : (LOW ^ _pinInverted[i]));
-}
-
-
-void AccelStepper::step1(long step)
-{
-    (void)(step); // Unused
-
-    // _pin[0] is step, _pin[1] is direction
-    setOutputPins(_direction ? 0b10 : 0b00); // Set direction first else get rogue pulses
-    setOutputPins(_direction ? 0b11 : 0b01); // step HIGH
-    // Caution 200ns setup time 
-    // Delay the minimum allowed pulse width
-    delayMicroseconds(1);
-    setOutputPins(_direction ? 0b10 : 0b00); // step LOW
 }
 
 //received data handler function
@@ -179,37 +187,17 @@ void dataRcv(int numBytes) {
       byte inData = Wire.read(); // throw out first value
       switch (i) {
         case 0:
-          controls.left = !(inData & 1);
-          controls.right = !(inData & (1 << 1));
+          controls.cw = !(inData & 1);
+          controls.ccw = !(inData & (1 << 1));
           controls.up = !(inData & (1 << 2));
           controls.down = !(inData & (1 << 3));
           controls.en_led = inData & (1 << 4);
           break;
         case 1:
-          // Y axis is backwards
-          if (inData > STICK_MID - STICK_DEADZONE && inData < STICK_MID + STICK_DEADZONE) // in deadzone
-            controls.y = 0;
-          else if (inData < STICK_MIN + STICK_FASTZONE) // positive fast
-            controls.y = 2;
-          else if (inData > STICK_MAX - STICK_FASTZONE) // negative fast
-            controls.y = -2;
-          else if (inData < STICK_MID - STICK_DEADZONE) // negative slow
-            controls.y = 1;
-          else if (inData > STICK_MID + STICK_DEADZONE)
-            controls.y = -1;
+          controls.y = inData;
           break;
         case 2:
-          // X axis is backwards
-          if (inData > STICK_MID - STICK_DEADZONE && inData < STICK_MID + STICK_DEADZONE) // in deadzone
-            controls.x = 0;
-          else if (inData < STICK_MIN + STICK_FASTZONE) // positive fast
-            controls.x = 2;
-          else if (inData > STICK_MAX - STICK_FASTZONE) // negative fast
-            controls.x = -2;
-          else if (inData < STICK_MID - STICK_DEADZONE) // positive slow
-            controls.x = 1;
-          else if (inData > STICK_MID + STICK_DEADZONE)
-            controls.x = -1;
+          controls.x = inData;
           break;
       }
     }
