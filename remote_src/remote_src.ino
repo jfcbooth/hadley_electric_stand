@@ -4,13 +4,13 @@
 #define RIGHT             PIN_PD5
 #define X                 PIN_PC3
 #define Y                 PIN_PC2
-#define SPEED_LED         PIN_PB0
-#define SPEED_LED_TOGGLE  PIN_PD7
+#define EN_LED         PIN_PB0
+#define EN_LED_TOGGLE  PIN_PD7
 
 // I2C master
 #include <Wire.h>
 
-#define SPEED_LED_START_VAL 1
+#define EN_LED_START_VAL 0
 
 
 typedef struct {
@@ -18,8 +18,8 @@ typedef struct {
   bool down = 0;
   bool left = 0;
   bool right = 0;
-  bool speed_led_toggle = 0;
-  bool speed_led = SPEED_LED_START_VAL; // start in high speed mode (to indicate initial power bc of LED)
+  bool en_led_toggle = 0;
+  bool en_led = EN_LED_START_VAL; // start in high speed mode (to indicate initial power bc of LED)
   bool yIsNeg = 0;
   bool xIsNeg = 0;
   byte x = 0; // value from 0-4 indicating speed
@@ -35,17 +35,17 @@ void setup() {
   pinMode(DOWN, INPUT_PULLUP);
   pinMode(LEFT, INPUT_PULLUP);
   pinMode(RIGHT, INPUT_PULLUP);
-  pinMode(SPEED_LED_TOGGLE, INPUT_PULLUP);
+  pinMode(EN_LED_TOGGLE, INPUT_PULLUP);
   // variable voltage joystick inputs
   pinMode(X, INPUT);
   pinMode(Y, INPUT);
   // joystick speed indicator
-  pinMode(SPEED_LED, OUTPUT);
+  pinMode(EN_LED, OUTPUT);
 
   // Setup I2C
   Wire.begin();
 
-  digitalWrite(SPEED_LED, SPEED_LED_START_VAL);
+  digitalWrite(EN_LED, EN_LED_START_VAL);
 }
 
 void loop() {
@@ -54,13 +54,13 @@ void loop() {
   controls.down = digitalRead(DOWN);
   controls.left = digitalRead(LEFT);
   controls.right = digitalRead(RIGHT);
-  controls.speed_led_toggle = digitalRead(SPEED_LED_TOGGLE);
+  controls.en_led_toggle = digitalRead(EN_LED_TOGGLE);
   
   // set speed LED
-  if(!controls.speed_led_toggle){
-    while(!digitalRead(SPEED_LED_TOGGLE)); // wait for toggle to be released
-    controls.speed_led = !controls.speed_led;
-    digitalWrite(SPEED_LED, controls.speed_led);
+  if(!controls.en_led_toggle){
+    while(!digitalRead(EN_LED_TOGGLE)); // wait for toggle to be released
+    controls.en_led = !controls.en_led;
+    digitalWrite(EN_LED, controls.en_led);
   }
   
   // read joystick X (
@@ -70,7 +70,7 @@ void loop() {
   controls.y = analogRead(Y) / 4;
 
   // combine binary
-  controls.to_send[0] = (controls.speed_led << 4) | (controls.down << 3) | (controls.up << 2) | (controls.right << 1) | (controls.left) ;
+  controls.to_send[0] = (controls.en_led << 4) | (controls.down << 3) | (controls.up << 2) | (controls.right << 1) | (controls.left) ;
   controls.to_send[1] = controls.x;
   controls.to_send[2] = controls.y;
 
