@@ -1,10 +1,10 @@
 //#include <AccelStepper.h>
 #include <Wire.h>
+#include <stdlib.h>
 
 void dataRcv(int numBytes);
 
-//#define DEBUG
-
+#define DEBUG
 
 // Define pin connections
 #define X_DIR_PIN 5
@@ -15,28 +15,35 @@ void dataRcv(int numBytes);
 #define STEPPER_EN 8
 
 // joystick returns value 0-255
-// 255 <- X -> 0
-// ^ 255 Y v 0
 #define STICK_MIN 0
 #define STICK_MAX 255
 #define STICK_MID 128
-#define STICK_DEADZONE 25 // 25 from center is dead zone
-#define STICK_FASTZONE 50 // 50 from end is fast zone, the rest in the middle is slow zone
+#define STICK_DEADZONE 15 // 25 from center is dead zone
 
-#define MIN_SPEED_DELAY 3000
-#define MAX_SPEED_DELAY 10000
+#define STICK_MOVE_THRESH1 STICK_DEADZONE
+#define STICK_MOVE_THRESH2 -STICK_DEADZONE
+
+#define MIN_SPEED_DELAY 5000
+#define MAX_SPEED_DELAY 30000
+
+// control inputs
 typedef struct {
+  // buttons
   bool up = 0;
   bool down = 0;
-  bool cw = 0;
-  bool ccw = 0;
-  bool en_led_toggle = 0;
-  bool en_led = 0; // start with steppers disabled
+  bool left = 0;
+  bool right = 0;
+  bool en_led = false; // start with steppers disabled
+  // joy stick directions
   int16_t x = 0;
   int16_t y = 0;
 } control_t;
 
 volatile static control_t controls;
+
+int16_t xStepDelay = 0;
+int16_t yStepDelay = 0;
+
 
 void setup() {
   // Debug output
@@ -65,15 +72,90 @@ void setup() {
   digitalWrite(Y_STEP_PIN, LOW);
   digitalWrite(Y_DIR_PIN, LOW);
 
+  cli();
+  
+  //set timer0 interrupt at 2kHz
+  TCCR0A = 0;// set entire TCCR0A register to 0
+  TCCR0B = 0;// same for TCCR0B
+  TCNT0  = 0;//initialize counter value to 0
+  // set compare match register for 2khz increments
+  OCR0A = 6;// = (16*10^6) / (2000*64) - 1 (must be <256)
+  // turn on CTC mode
+  TCCR0A |= (1 << WGM01);
+  // Set CS01 and CS00 bits for 64 prescaler
+  TCCR0B |= (1 << CS01) | (1 << CS00);   
+  // enable timer compare interrupt
+  TIMSK0 |= (1 << OCIE0A);
+  
+  sei();
   
 }
 
+  static int16_t delayX = 0;
+  static int16_t delayY = 0;
+  static bool onX = false;
+  static bool onY = false;
+  static bool up_pressed = false;
+  static bool down_pressed = false;
+  static bool left_pressed = false;
+  static bool right_pressed = false;
+
+ISR(TIMER0_COMPA_vect){ // occurs every approx. 100us
+
+  // X direction
+  if(delayX == 0){
+    digitalWrite(X_STEP_PIN, LOW);
+      // round to nearest 100us
+      delayX = (abs(controls.x) > 25) ? (xStepDelay / 100) : 0; // assign only if out of deadzone
+      if(left_pressed){
+        delayX++;
+        left_pressed = false;
+      } else if(right_pressed) {
+        delayX++;
+        right_pressed = false;
+      }
+      onX = false;
+  } else {
+    if(!onX){
+      digitalWrite(X_STEP_PIN, HIGH);
+      onX = true;
+    } else {
+      delayX--;
+    }
+  }
+
+  // Y direction
+  if(delayY == 0){
+    digitalWrite(Y_STEP_PIN, LOW);
+      // round to nearest 100us
+      delayY = (abs(controls.y) > 25) ? (yStepDelay / 100) : 0; // assign only if out of deadzone
+      if(up_pressed){
+        delayY++;
+        up_pressed = false;
+      } else if(down_pressed) {
+        delayY++;
+        down_pressed = false;
+      }
+      onY = false;
+  } else {
+    if(!onY){
+      digitalWrite(Y_STEP_PIN, HIGH);
+      onY = true;
+    } else {
+      delayY--;
+    }
+  }
+}
+
 void loop() {
+  
+  xStepDelay = map(abs(controls.x), STICK_MIN, STICK_MID, MAX_SPEED_DELAY, MIN_SPEED_DELAY);
+  yStepDelay = map(abs(controls.y), STICK_MIN, STICK_MID, MAX_SPEED_DELAY, MIN_SPEED_DELAY);
   /*
    * Motor enable
    */
 
-   static bool en = false; // used to steppers aren't continually being enabled & disabled
+   static bool en = false; // used so steppers aren't continually being enabled & disabled
     if(controls.en_led && en == false){
       digitalWrite(STEPPER_EN, LOW); // enable steppers
       en = true;
@@ -87,96 +169,86 @@ void loop() {
     */
 
   // Joystick X-axis movements
-  int xStepDelay = 3000;
-  if (!(controls.x > STICK_MID - STICK_DEADZONE && controls.x < STICK_MID + STICK_DEADZONE)){ // if not in deadzone
-    if(controls.x < STICK_MID - STICK_DEADZONE){ // positive
-      xStepDelay = map(controls.x, STICK_MID - STICK_DEADZONE, STICK_MIN, MAX_SPEED_DELAY, MIN_SPEED_DELAY); // Convrests the read values of the potentiometer from 0 to 255 into desireded delay values (300 to 4000)  // Makes pules with custom delay, depending on the Potentiometer, from which the speed of the motor depends
-      digitalWrite(X_DIR_PIN, LOW);
-    } else { // negative
-      xStepDelay = map(controls.x, STICK_MID + STICK_DEADZONE, STICK_MAX, MAX_SPEED_DELAY, MIN_SPEED_DELAY); // Convrests the read values of the potentiometer from 0 to 255 into desireded delay values (300 to 4000)  // Makes pules with custom delay, depending on the Potentiometer, from which the speed of the motor depends
-      digitalWrite(X_DIR_PIN, HIGH);
-    }
-    // take 1 step
-    //Serial.println(xStepDelay);
-    digitalWrite(X_STEP_PIN, HIGH);
-    delayMicroseconds(xStepDelay);
-    digitalWrite(X_STEP_PIN, LOW);
-    delayMicroseconds(xStepDelay);
-  }
+  static bool currXDir = LOW;
+  static bool currYDir = LOW;
+  
 
-  // Left button movements
-  if(controls.cw){
-    while(controls.cw); // wait for it to be released
+  // set new X dir
+  if(controls.x > STICK_DEADZONE && currXDir == HIGH){
+    // only update pin state if needed
     digitalWrite(X_DIR_PIN, HIGH);
-    digitalWrite(X_STEP_PIN, HIGH);
-    delayMicroseconds(MAX_SPEED_DELAY);
-    digitalWrite(X_STEP_PIN, LOW);
-    delayMicroseconds(MAX_SPEED_DELAY);
-  }
-
-  // Right button movements
-  if(controls.ccw){
-    while(controls.ccw); // wait for it to be released
+    currXDir = LOW;
+  } else if(controls.x < -STICK_DEADZONE && currXDir == LOW){
     digitalWrite(X_DIR_PIN, LOW);
-    digitalWrite(X_STEP_PIN, HIGH);
-    delayMicroseconds(MAX_SPEED_DELAY);
-    digitalWrite(X_STEP_PIN, LOW);
-    delayMicroseconds(MAX_SPEED_DELAY);
+    currXDir = HIGH;
   }
 
-  /*
-   * Y Movements
-   */
-
-  // Joystick Y-axis movements
-  int yStepDelay = 3000;
-  if (!(controls.y > STICK_MID - STICK_DEADZONE && controls.y < STICK_MID + STICK_DEADZONE)){ // if not in deadzone
-    if(controls.y < STICK_MID - STICK_DEADZONE){ // positive
-      yStepDelay = map(controls.y, STICK_MID - STICK_DEADZONE, STICK_MAX, MAX_SPEED_DELAY, MIN_SPEED_DELAY); // Convrests the read values of the potentiometer from 0 to 255 into desireded delay values (300 to 4000)  // Makes pules with custom delay, depending on the Potentiometer, from which the speed of the motor depends
-      digitalWrite(Y_DIR_PIN, LOW);
-    } else { // negative
-      yStepDelay = map(controls.y, STICK_MID + STICK_DEADZONE, STICK_MIN, MAX_SPEED_DELAY, MIN_SPEED_DELAY); // Convrests the read values of the potentiometer from 0 to 255 into desireded delay values (300 to 4000)  // Makes pules with custom delay, depending on the Potentiometer, from which the speed of the motor depends
+  // set new Y dir
+  if(controls.y > STICK_DEADZONE && currYDir == HIGH){
+    // only update pin state if needed
+        digitalWrite(Y_DIR_PIN, LOW);
+    currYDir = LOW;
+  } else if(controls.y < -STICK_DEADZONE && currYDir == LOW){
       digitalWrite(Y_DIR_PIN, HIGH);
-    }
-    // take 1 step
-    digitalWrite(Y_STEP_PIN, HIGH);
-    delayMicroseconds(yStepDelay);
-    digitalWrite(Y_STEP_PIN, LOW);
-    delayMicroseconds(yStepDelay);
+      currYDir = HIGH;
   }
 
   // Up button movements
   if(controls.up){
     while(controls.up); // wait for it to be released
-    digitalWrite(Y_DIR_PIN, LOW);
-    digitalWrite(Y_STEP_PIN, HIGH);
-    delayMicroseconds(MAX_SPEED_DELAY);
-    digitalWrite(Y_STEP_PIN, LOW);
-    delayMicroseconds(MAX_SPEED_DELAY);
-  }
+    up_pressed = true;
+    digitalWrite(Y_DIR_PIN, HIGH);
+    currYDir = HIGH;
+    }
 
   // Down button movements
   if(controls.down){
     while(controls.down); // wait for it to be released
-    digitalWrite(Y_DIR_PIN, HIGH);
-    digitalWrite(Y_STEP_PIN, HIGH);
-    delayMicroseconds(MAX_SPEED_DELAY);
-    digitalWrite(Y_STEP_PIN, LOW);
-    delayMicroseconds(MAX_SPEED_DELAY);
+    down_pressed = true;
+    digitalWrite(Y_DIR_PIN, LOW);
+    currYDir = LOW;
+  }
+  
+  // Left button movements
+  if(controls.left){
+    while(controls.left); // wait for it to be released
+    left_pressed = true;
+    digitalWrite(X_DIR_PIN, HIGH);
+    currXDir = HIGH;
+  }
+
+  // Right button movements
+  if(controls.right){
+    while(controls.right); // wait for it to be released
+    right_pressed = true;
+    digitalWrite(X_DIR_PIN, LOW);
+    currXDir = LOW;
   }
 
 #ifdef DEBUG
-//  Serial.print("toMove.x: ");
-//  Serial.print(toMove.x);
-//  Serial.print(", toMove.y: ");
-//  Serial.print(toMove.y);
-//  Serial.print(", En: ");
-//  Serial.print(controls.en_led);
+//  Serial.print(", Y Speed Delay: ");
+//  Serial.print(yStepDelay);
+//  Serial.print(", X Speed Delay: ");
+//  Serial.print(xStepDelay);
+//  Serial.print(", X Dir: ");
+//  Serial.print(currXDir);
+//  Serial.print(", Y Dir: ");
+//  Serial.print(currYDir);
 //  Serial.print(", Y: ");
 //  Serial.print(controls.y);
+  Serial.print(", controls.up: ");
+  Serial.print(controls.up);
+  Serial.print(", controls.down: ");
+  Serial.print(controls.down);
+  Serial.print(", controls.left: ");
+  Serial.print(controls.left);
+  Serial.print(", controls.right: ");
+  Serial.print(controls.right);
+//  Serial.print(", delayX: ");
+//  Serial.print(delayX);
 //  Serial.print(", X: ");
 //  Serial.print(controls.x);
-//  Serial.println();
+  Serial.println();
 #endif
 }
 
@@ -187,17 +259,17 @@ void dataRcv(int numBytes) {
       byte inData = Wire.read(); // throw out first value
       switch (i) {
         case 0:
-          controls.cw = !(inData & 1);
-          controls.ccw = !(inData & (1 << 1));
+          controls.left = !(inData & 1);
+          controls.right = !(inData & (1 << 1));
           controls.up = !(inData & (1 << 2));
           controls.down = !(inData & (1 << 3));
           controls.en_led = inData & (1 << 4);
           break;
         case 1:
-          controls.y = inData;
+          controls.y = inData - STICK_MID;
           break;
         case 2:
-          controls.x = inData;
+          controls.x = inData - STICK_MID;
           break;
       }
     }
