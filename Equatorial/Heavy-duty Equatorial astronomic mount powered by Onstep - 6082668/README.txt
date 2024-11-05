@@ -1,0 +1,1 @@
+Heavy-duty Equatorial astronomic mount powered by Onstep by Mazikke on Thingiverse: https://www.thingiverse.com/thing:6082668
